@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HLS Player</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(180deg, #071027, #0b1220);
+      color: #e6eef6;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { 
+      margin: 0 0 20px 0;
+      color: #fff;
+    }
+    .controls {
+      margin: 20px 0;
+    }
+    .controls label {
+      font-weight: bold;
+      display: block;
+      margin-bottom: 8px;
+    }
+    .controls input {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #21303f;
+      background: #071422;
+      color: #e6eef6;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    video {
+      width: 100%;
+      max-width: 800px;
+      background: #000;
+      display: block;
+      margin: 20px 0;
+    }
+    .player {
+      position: relative;
+    }
+    .toasts {
+      position: fixed;
+      right: 20px;
+      top: 20px;
+      max-width: 350px;
+      z-index: 1000;
+    }
+    .toast {
+      padding: 12px 16px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      background: rgba(20, 30, 40, 0.95);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+      color: #e6eef6;
+      font-size: 13px;
+      animation: slideIn 0.3s ease-out;
+    }
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+    .toast.error {
+      background: linear-gradient(90deg, #7f1d1d, #991b1b);
+    }
+    .toast.warning {
+      background: linear-gradient(90deg, #713f12, #92400e);
+    }
+    .toast.info {
+      background: linear-gradient(90deg, #0ea5b7, #0284c7);
+    }
+    footer {
+      margin-top: 20px;
+      color: #94a3b8;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>HLS Player with Debug Toast</h1>
+    
+    <div class="controls">
+      <label>HLS Stream URL:</label>
+      <input type="text" id="urlInput" />
+    </div>
+    
+    <div class="player">
+      <video id="video" controls></video>
+    </div>
+    
+    <footer>
+      <small>Debug toasts will appear in the top-right corner showing HLS events</small>
+    </footer>
+  </div>
+  
+  <div class="toasts" id="toasts"></div>
+
+  <script>
+    var video = document.getElementById('video');
+    var urlInput = document.getElementById('urlInput');
+    var toastsContainer = document.getElementById('toasts');
+    var hls = null;
+    
+    // Default URL - try common HLS paths
+    // Common paths: /stream/index.m3u8, /mystream/index.m3u8, /live/stream.m3u8, /hls/stream.m3u8
+    var defaultUrl = 'http://' + window.location.hostname + ':8888/mystream/index.m3u8';
+    urlInput.value = defaultUrl;
+    
+    // Show available test URLs
+    console.log('Try these URLs if default fails:');
+    console.log('http://' + window.location.hostname + ':8888/stream/index.m3u8');
+    console.log('http://' + window.location.hostname + ':8888/live/index.m3u8');
+    console.log('http://' + window.location.hostname + ':8888/hls/index.m3u8');
+    
+    // Detect browser and show info
+    var ua = navigator.userAgent;
+    var browserInfo = 'Browser: ' + ua.substring(0, 80);
+    
+    // Toast notification system
+    function showToast(message, level) {
+      level = level || 'info';
+      var toast = document.createElement('div');
+      toast.className = 'toast ' + level;
+      toast.textContent = message;
+      toastsContainer.appendChild(toast);
+      
+      console.log('[' + level.toUpperCase() + '] ' + message);
+      
+      setTimeout(function() {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(function() {
+          toastsContainer.removeChild(toast);
+        }, 300);
+      }, 5000);
+    }
+    
+    // Add video element event listeners for debugging
+    video.addEventListener('loadstart', function() {
+      showToast('Video: loadstart event', 'info');
+    });
+    
+    video.addEventListener('loadedmetadata', function() {
+      showToast('Video: metadata loaded', 'info');
+    });
+    
+    video.addEventListener('loadeddata', function() {
+      showToast('Video: data loaded', 'info');
+    });
+    
+    video.addEventListener('canplay', function() {
+      showToast('Video: can play', 'info');
+    });
+    
+    video.addEventListener('canplaythrough', function() {
+      showToast('Video: can play through', 'info');
+    });
+    
+    video.addEventListener('playing', function() {
+      showToast('Video: playing started', 'info');
+    });
+    
+    video.addEventListener('pause', function() {
+      showToast('Video: paused', 'warning');
+    });
+    
+    video.addEventListener('error', function(e) {
+      var errorMsg = 'Video error: ';
+      if (video.error) {
+        errorMsg += 'code=' + video.error.code + ' ';
+        switch(video.error.code) {
+          case 1: errorMsg += '(MEDIA_ERR_ABORTED)'; break;
+          case 2: errorMsg += '(MEDIA_ERR_NETWORK)'; break;
+          case 3: errorMsg += '(MEDIA_ERR_DECODE)'; break;
+          case 4: errorMsg += '(MEDIA_ERR_SRC_NOT_SUPPORTED)'; break;
+        }
+        if (video.error.message) {
+          errorMsg += ' - ' + video.error.message;
+        }
+      }
+      showToast(errorMsg, 'error');
+    });
+    
+    video.addEventListener('stalled', function() {
+      showToast('Video: stalled', 'warning');
+    });
+    
+    video.addEventListener('waiting', function() {
+      showToast('Video: waiting for data', 'warning');
+    });
+    
+    // Load HLS stream
+    function loadStream(url) {
+      showToast('Loading: ' + url, 'info');
+      showToast(browserInfo, 'info');
+      
+      // Check HLS.js support
+      var hlsSupported = typeof Hls !== 'undefined' && Hls.isSupported();
+      showToast('HLS.js supported: ' + hlsSupported, 'info');
+      
+      // Check native HLS support
+      var nativeHLS = video.canPlayType('application/vnd.apple.mpegurl');
+      var nativeHLS2 = video.canPlayType('application/x-mpegURL');
+      showToast('Native HLS (vnd): ' + (nativeHLS || 'none'), 'info');
+      showToast('Native HLS (x-mpegURL): ' + (nativeHLS2 || 'none'), 'info');
+      
+      // Test if stream is accessible
+      showToast('Testing stream URL...', 'info');
+      var testUrl = url.replace('/index.m3u8', '');
+      
+      fetch(url)
+        .then(function(response) {
+          showToast('Stream response: HTTP ' + response.status, response.ok ? 'info' : 'error');
+          if (response.ok) {
+            showToast('Content-Type: ' + response.headers.get('content-type'), 'info');
+            return response.text();
+          } else {
+            showToast('Stream returned ' + response.status + ' ' + response.statusText, 'error');
+            showToast('Check if stream name is correct', 'error');
+            showToast('Try entering different URL in the input field', 'warning');
+          }
+        })
+        .then(function(text) {
+          if (text) {
+            showToast('Playlist size: ' + text.length + ' bytes', 'info');
+            if (text.indexOf('#EXTM3U') === 0) {
+              showToast('Valid HLS playlist detected!', 'info');
+            } else {
+              showToast('Warning: Not a valid HLS playlist', 'warning');
+            }
+          }
+        })
+        .catch(function(e) {
+          showToast('Fetch error: ' + e.message, 'error');
+          showToast('CORS or network issue detected', 'error');
+          showToast('Trying to load in video anyway...', 'warning');
+        });
+      
+      // Destroy existing HLS instance
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+      
+      if (hlsSupported) {
+        showToast('HLS.js is supported', 'info');
+        
+        hls = new Hls({
+          debug: false,
+          enableWorker: true,
+          lowLatencyMode: true
+        });
+        
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        
+        hls.on(Hls.Events.MEDIA_ATTACHED, function() {
+          showToast('Media element attached', 'info');
+        });
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, function(event, data) {
+          showToast('Manifest parsed - ' + data.levels.length + ' quality levels', 'info');
+          video.play().then(function() {
+            showToast('Playback started', 'info');
+          }).catch(function(e) {
+            showToast('Auto-play blocked - click play button', 'warning');
+          });
+        });
+        
+        hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
+          showToast('Quality switched to level ' + data.level, 'info');
+        });
+        
+        hls.on(Hls.Events.ERROR, function(event, data) {
+          var errorMsg = 'HLS Error: ' + data.type + ' - ' + data.details;
+          if (data.fatal) {
+            errorMsg += ' (FATAL)';
+            showToast(errorMsg, 'error');
+            
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                showToast('Network error, attempting recovery...', 'warning');
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                showToast('Media error, attempting recovery...', 'warning');
+                hls.recoverMediaError();
+                break;
+              default:
+                showToast('Unrecoverable error, destroying player', 'error');
+                hls.destroy();
+                break;
+            }
+          } else {
+            showToast(errorMsg, 'warning');
+          }
+        });
+        
+        hls.on(Hls.Events.FRAG_LOADED, function(event, data) {
+          console.log('Fragment loaded: ' + data.frag.url);
+        });
+        
+      } else if (video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('application/x-mpegURL')) {
+        showToast('Using native HLS (Safari)', 'info');
+        
+        // Set CORS mode
+        video.crossOrigin = 'anonymous';
+        showToast('Set crossOrigin mode', 'info');
+        
+        // Try setting src
+        try {
+          video.src = url;
+          showToast('Video src set to: ' + url, 'info');
+        } catch(e) {
+          showToast('Error setting src: ' + e.message, 'error');
+        }
+        
+        // Try to load
+        try {
+          video.load();
+          showToast('video.load() called', 'info');
+        } catch(e) {
+          showToast('Error calling load(): ' + e.message, 'error');
+        }
+        
+        video.addEventListener('loadedmetadata', function handleMetadata() {
+          showToast('Native HLS: metadata loaded', 'info');
+          showToast('Duration: ' + video.duration + 's', 'info');
+          showToast('Ready state: ' + video.readyState, 'info');
+          showToast('Video size: ' + video.videoWidth + 'x' + video.videoHeight, 'info');
+          
+          video.play().then(function() {
+            showToast('Native HLS: play() succeeded', 'info');
+          }).catch(function(e) {
+            showToast('Native HLS: play() failed - ' + e.name, 'error');
+            showToast('Error message: ' + e.message, 'error');
+            showToast('Click play button to start', 'warning');
+          });
+          
+          video.removeEventListener('loadedmetadata', handleMetadata);
+        });
+        
+      } else {
+        showToast('HLS NOT supported', 'error');
+        showToast('Browser cannot play HLS streams', 'error');
+        
+        // Show what formats ARE supported
+        var formats = ['video/mp4', 'video/webm', 'video/ogg'];
+        formats.forEach(function(fmt) {
+          var support = video.canPlayType(fmt);
+          if (support) {
+            showToast('Supports: ' + fmt + ' (' + support + ')', 'info');
+          }
+        });
+      }
+    }
+    
+    // Load stream on input change
+    urlInput.addEventListener('change', function() {
+      loadStream(urlInput.value);
+    });
+    
+    // Load default stream on page load
+    window.addEventListener('load', function() {
+      showToast('Page loaded', 'info');
+      showToast('Video element ready', 'info');
+      setTimeout(function() {
+        loadStream(defaultUrl);
+      }, 100);
+    });
+  </script>
+</body>
+</html>

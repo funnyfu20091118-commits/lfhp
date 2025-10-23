@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HLS Player</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(180deg, #071027, #0b1220);
+      color: #e6eef6;
+      margin: 0;
+      padding: 20px;
+    }
+    .app {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { margin: 0 0 10px 0; }
+    .controls {
+      margin: 20px 0;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .controls label {
+      font-weight: bold;
+    }
+    .controls input {
+      flex: 1;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #21303f;
+      background: #071422;
+      color: #e6eef6;
+    }
+    video {
+      width: 100%;
+      max-width: 800px;
+      background: #000;
+      display: block;
+    }
+    .player {
+      position: relative;
+    }
+    .toasts {
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 320px;
+      z-index: 100;
+    }
+    .toast {
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: rgba(20, 30, 40, 0.95);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+      color: #e6eef6;
+      font-size: 13px;
+    }
+    .toast.error {
+      background: linear-gradient(90deg, #7f1d1d, #991b1b);
+    }
+    .toast.warning {
+      background: linear-gradient(90deg, #713f12, #92400e);
+    }
+    .toast.info {
+      background: linear-gradient(90deg, #0ea5b7, #0284c7);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    var e = React.createElement;
+    var useState = React.useState;
+    var useRef = React.useRef;
+    var useEffect = React.useEffect;
+
+    function HlsPlayer(props) {
+      var videoRef = useRef(null);
+      var hlsRef = useRef(null);
+      var toastsState = useState([]);
+      var toasts = toastsState[0];
+      var setToasts = toastsState[1];
+
+      function pushToast(text, level) {
+        level = level || 'info';
+        var id = Date.now() + Math.random();
+        setToasts(function(t) {
+          return [{id: id, text: text, level: level}].concat(t);
+        });
+        setTimeout(function() {
+          setToasts(function(t) {
+            return t.filter(function(x) { return x.id !== id; });
+          });
+        }, 5000);
+      }
+
+      useEffect(function() {
+        var video = videoRef.current;
+        if (!video) return;
+
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+
+        if (Hls.isSupported()) {
+          var hls = new Hls({});
+          hlsRef.current = hls;
+          hls.attachMedia(video);
+          
+          hls.on(Hls.Events.MEDIA_ATTACHED, function() {
+            pushToast('Media element attached');
+            hls.loadSource(props.src);
+          });
+          
+          hls.on(Hls.Events.MANIFEST_PARSED, function() {
+            pushToast('Manifest parsed');
+            video.play().then(function() {
+              pushToast('Playing');
+            }).catch(function() {
+              pushToast('Auto-play blocked');
+            });
+          });
+          
+          hls.on(Hls.Events.ERROR, function(ev, data) {
+            var msg = 'HLS error: ' + data.type + ' / ' + data.details + (data.fatal ? ' (fatal)' : '');
+            pushToast(msg, 'error');
+            if (data.fatal) {
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                pushToast('Network error, trying to recover...', 'warning');
+                hls.startLoad();
+              } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                pushToast('Media error, trying to recover...', 'warning');
+                hls.recoverMediaError();
+              } else {
+                hls.destroy();
+              }
+            }
+          });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = props.src;
+          video.addEventListener('loadedmetadata', function() {
+            pushToast('Native HLS loaded');
+            video.play().catch(function() {
+              pushToast('Auto-play blocked');
+            });
+          });
+        } else {
+          pushToast('HLS not supported in this browser', 'error');
+        }
+
+        return function() {
+          if (hlsRef.current) {
+            hlsRef.current.destroy();
+            hlsRef.current = null;
+          }
+        };
+      }, [props.src]);
+
+      return e('div', { className: 'player' },
+        e('video', { ref: videoRef, controls: true }),
+        e('div', { className: 'toasts' },
+          toasts.map(function(t) {
+            return e('div', { key: t.id, className: 'toast ' + t.level }, t.text);
+          })
+        )
+      );
+    }
+
+    function App() {
+      var defaultUrl = 'http://' + window.location.hostname + ':8888/mystream/index.m3u8';
+      var urlState = useState(defaultUrl);
+      var url = urlState[0];
+      var setUrl = urlState[1];
+
+      return e('div', { className: 'app' },
+        e('h1', null, 'Hello World - HLS Player'),
+        e('p', null, 'If you see this, React is working!'),
+        e('h2', null, 'Simple HLS Player'),
+        e('div', { className: 'controls' },
+          e('label', null, 'HLS URL'),
+          e('input', {
+            value: url,
+            onChange: function(ev) { setUrl(ev.target.value); }
+          })
+        ),
+        e(HlsPlayer, { src: url }),
+        e('footer', null,
+          e('small', null, 'Debug toast shown for HLS events')
+        )
+      );
+    }
+
+    ReactDOM.render(e(App), document.getElementById('root'));
+  </script>
+</body>
+</html>

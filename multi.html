@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Protocol Video Player</title>
+  <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+  <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(180deg, #071027, #0b1220);
+      color: #e6eef6;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { 
+      margin: 0 0 20px 0;
+      color: #fff;
+    }
+    .protocol-selector {
+      margin: 20px 0;
+      display: flex;
+      gap: 10px;
+    }
+    .protocol-selector button {
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: 1px solid #21303f;
+      background: #071422;
+      color: #e6eef6;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .protocol-selector button.active {
+      background: #0ea5b7;
+      border-color: #0ea5b7;
+      font-weight: bold;
+    }
+    .controls {
+      margin: 20px 0;
+    }
+    .controls label {
+      font-weight: bold;
+      display: block;
+      margin-bottom: 8px;
+    }
+    .controls input {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #21303f;
+      background: #071422;
+      color: #e6eef6;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    .video-js {
+      width: 100%;
+      max-width: 800px;
+    }
+    video {
+      width: 100%;
+      max-width: 800px;
+      background: #000;
+    }
+    .player {
+      position: relative;
+      margin: 20px 0;
+    }
+    .toasts {
+      position: fixed;
+      right: 20px;
+      top: 20px;
+      max-width: 350px;
+      z-index: 1000;
+    }
+    .toast {
+      padding: 12px 16px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      background: rgba(20, 30, 40, 0.95);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+      color: #e6eef6;
+      font-size: 13px;
+      animation: slideIn 0.3s ease-out;
+    }
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+    .toast.error {
+      background: linear-gradient(90deg, #7f1d1d, #991b1b);
+    }
+    .toast.warning {
+      background: linear-gradient(90deg, #713f12, #92400e);
+    }
+    .toast.info {
+      background: linear-gradient(90deg, #0ea5b7, #0284c7);
+    }
+    footer {
+      margin-top: 20px;
+      color: #94a3b8;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Multi-Protocol Video Player</h1>
+    
+    <div class="protocol-selector">
+      <button id="btnHLS" class="active">HLS (HTTP:8888)</button>
+      <button id="btnRTMP">RTMP (TCP:1935)</button>
+    </div>
+    
+    <div class="controls">
+      <label>Stream URL:</label>
+      <input type="text" id="urlInput" />
+    </div>
+    
+    <div class="player">
+      <video id="player" class="video-js vjs-default-skin" controls preload="auto">
+        <p class="vjs-no-js">
+          To view this video please enable JavaScript, and consider upgrading to a web browser that
+          <a href="http://videojs.com/html5-video-support/" target="_blank">supports HTML5 video</a>
+        </p>
+      </video>
+    </div>
+    
+    <footer>
+      <small>Debug toasts appear in top-right. Try HLS first, then RTMP if it fails on old browsers.</small>
+    </footer>
+  </div>
+  
+  <div class="toasts" id="toasts"></div>
+
+  <script>
+    var player = null;
+    var hls = null;
+    var currentProtocol = 'HLS';
+    var toastsContainer = document.getElementById('toasts');
+    var urlInput = document.getElementById('urlInput');
+    var hostname = window.location.hostname;
+    
+    var urls = {
+      HLS: 'http://' + hostname + ':8888/mystream/index.m3u8',
+      RTMP: 'rtmp://' + hostname + ':1935/mystream'
+    };
+    
+    // Toast notifications
+    function showToast(message, level) {
+      level = level || 'info';
+      var toast = document.createElement('div');
+      toast.className = 'toast ' + level;
+      toast.textContent = message;
+      toastsContainer.appendChild(toast);
+      console.log('[' + level.toUpperCase() + '] ' + message);
+      
+      setTimeout(function() {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(function() {
+          if (toast.parentNode) {
+            toastsContainer.removeChild(toast);
+          }
+        }, 300);
+      }, 5000);
+    }
+    
+    // Initialize Video.js player
+    function initPlayer() {
+      var videoEl = document.getElementById('player');
+      player = videojs(videoEl, {
+        controls: true,
+        autoplay: false,
+        preload: 'auto'
+      });
+      
+      player.on('error', function() {
+        var error = player.error();
+        if (error) {
+          showToast('Player error code: ' + error.code, 'error');
+          showToast('Error message: ' + error.message, 'error');
+        }
+      });
+      
+      player.on('loadstart', function() {
+        showToast('Loading started', 'info');
+      });
+      
+      player.on('loadedmetadata', function() {
+        showToast('Metadata loaded', 'info');
+      });
+      
+      player.on('playing', function() {
+        showToast('Playing!', 'info');
+      });
+    }
+    
+    // Load HLS stream
+    function loadHLS(url) {
+      showToast('Loading HLS: ' + url, 'info');
+      
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+      
+      var video = document.getElementById('player');
+      
+      // Remove any existing source elements
+      var sources = video.getElementsByTagName('source');
+      while(sources.length > 0) {
+        sources[0].parentNode.removeChild(sources[0]);
+      }
+      
+      if (Hls.isSupported()) {
+        showToast('Using HLS.js', 'info');
+        
+        hls = new Hls({ debug: false });
+        
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, function() {
+          showToast('HLS manifest parsed successfully', 'info');
+          player.play();
+        });
+        
+        hls.on(Hls.Events.ERROR, function(event, data) {
+          if (data.fatal) {
+            showToast('HLS fatal error: ' + data.details, 'error');
+            showToast('Try RTMP protocol instead', 'warning');
+          } else {
+            showToast('HLS warning: ' + data.details, 'warning');
+          }
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        showToast('Using native HLS (Safari)', 'info');
+        var source = document.createElement('source');
+        source.src = url;
+        source.type = 'application/x-mpegURL';
+        video.appendChild(source);
+        player.load();
+        player.play();
+      } else {
+        showToast('HLS not supported - switch to RTMP', 'error');
+      }
+    }
+    
+    // Load RTMP stream
+    function loadRTMP(url) {
+      showToast('Loading RTMP: ' + url, 'info');
+      
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+      
+      var video = document.getElementById('player');
+      
+      // Remove any existing source elements
+      var sources = video.getElementsByTagName('source');
+      while(sources.length > 0) {
+        sources[0].parentNode.removeChild(sources[0]);
+      }
+      
+      // Create and add new source element
+      var source = document.createElement('source');
+      source.src = url;
+      source.type = 'rtmp/mp4';
+      video.appendChild(source);
+      
+      showToast('RTMP source set to: ' + url, 'info');
+      showToast('RTMP type: rtmp/mp4', 'info');
+      
+      // Reload player
+      try {
+        player.load();
+        showToast('Player reloaded with RTMP source', 'info');
+        
+        setTimeout(function() {
+          player.play().then(function() {
+            showToast('RTMP playback started!', 'info');
+          }).catch(function(e) {
+            showToast('RTMP play error: ' + e.name, 'error');
+            showToast('Message: ' + e.message, 'error');
+          });
+        }, 500);
+      } catch(e) {
+        showToast('RTMP load error: ' + e.message, 'error');
+      }
+    }
+    
+    // Load stream based on protocol
+    function loadStream(protocol, url) {
+      currentProtocol = protocol;
+      
+      // Update button states
+      document.querySelectorAll('.protocol-selector button').forEach(function(btn) {
+        btn.classList.remove('active');
+      });
+      document.getElementById('btn' + protocol).classList.add('active');
+      
+      if (protocol === 'HLS') {
+        loadHLS(url);
+      } else if (protocol === 'RTMP') {
+        loadRTMP(url);
+      }
+    }
+    
+    // Protocol button handlers
+    document.getElementById('btnHLS').addEventListener('click', function() {
+      urlInput.value = urls.HLS;
+      loadStream('HLS', urls.HLS);
+    });
+    
+    document.getElementById('btnRTMP').addEventListener('click', function() {
+      urlInput.value = urls.RTMP;
+      loadStream('RTMP', urls.RTMP);
+    });
+    
+    // URL input change handler
+    urlInput.addEventListener('change', function() {
+      var url = urlInput.value;
+      if (url.indexOf('rtmp://') === 0) {
+        loadStream('RTMP', url);
+      } else {
+        loadStream('HLS', url);
+      }
+    });
+    
+    // Initialize on load
+    window.addEventListener('load', function() {
+      showToast('Page loaded', 'info');
+      showToast('UA: ' + navigator.userAgent.substring(0, 60), 'info');
+      initPlayer();
+      urlInput.value = urls.HLS;
+      setTimeout(function() {
+        loadStream('HLS', urls.HLS);
+      }, 500);
+    });
+  </script>
+</body>
+</html>
