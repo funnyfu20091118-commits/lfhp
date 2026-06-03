@@ -7,7 +7,7 @@ Minimal Vite + React app that plays HLS streams using hls.js and shows debug toa
 
 Try the provided URL (replace if needed):
 
-http://140.112.31.164:8888/mystream/index.m3u8
+http://x.x.x.x:8888/mystream/index.m3u8
 
 Quick start:
 
