@@ -1,5 +1,8 @@
 # Simple HLS Player
 
+<img width="1298" height="1101" alt="image" src="https://github.com/user-attachments/assets/e366c766-2707-4527-86be-ef156d1367b2" />
+
+
 Minimal Vite + React app that plays HLS streams using hls.js and shows debug toasts.
 
 Try the provided URL (replace if needed):
